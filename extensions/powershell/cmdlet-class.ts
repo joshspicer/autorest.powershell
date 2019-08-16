@@ -518,16 +518,26 @@ export class CmdletClass extends Class {
               // this supports both { error { message, code} } and { message, code} 
 
               let props = getAllPublicVirtualProperties(each.schema.details.csharp.virtualProperties);
-              const errorProperty = values(props).linq.first(p => p.property.details.csharp.name === 'error');
+              const errorProperty = values(props).linq.first(p => p.property.details.csharp.name === 'error' || p.property.details.csharp.name === 'odata.error');
               let ep = '';
               if (errorProperty) {
                 props = getAllPublicVirtualProperties(errorProperty.property.schema.details.csharp.virtualProperties);
                 ep = `${errorProperty.name}?.`
               }
 
-              const codeProp = values(props).linq.first(p => p.name.toLowerCase() === 'code');
-              const messageProp = values(props).linq.first(p => p.name.toLowerCase() === 'message');
+              const codeProp = values(props).linq.first(p => p.name.toLowerCase() === 'code' || p.name.toLowerCase() === 'odataerrorcode');
+              const messageProp = values(props).linq.first(p => p.name.toLowerCase() === 'message' || p.name.toLowerCase() === 'innererrormessage');
               const actionProp = values(props).linq.first(p => p.name.toLowerCase() === 'action');
+
+              var str = ""
+              props.forEach(element => {
+                str += '// props ' + element.name + ' ' + element.accessViaMember + ' ' + element.accessViaProperty + "\n";
+              });
+
+              yield str;
+              yield ('// codeProp = ' + codeProp);
+              yield ('// messageProp = ' + messageProp);
+              yield ('// errrorProperty = ' + errorProperty);
 
               if (codeProp && messageProp) {
                 const lcode = new LocalVariable('code', dotnet.Var, { initializer: `(await response)?.${ep}${codeProp.name}` });
@@ -966,7 +976,16 @@ export class CmdletClass extends Class {
             new: PropertiesRequiringNew.has(vParam.name) ? Modifier.New : Modifier.None
           });
 
+          if (vParam.schema.details.csharp.byReference) {
+            // this parameter's schema is marked as 'by-reference' which means we should 
+            // tag it with an ExportAs attribute for the I*Reference type.
+            cmdletParameter.add(new Attribute(ExportAsAttribute, { parameters: [`typeof(${vParam.schema.details.csharp.referenceInterface})`] }));
+          }
+
           if (vParam.schema.type === JsonType.Array) {
+            if (vParam.schema.items && vParam.schema.items.details.csharp.byReference) {
+              cmdletParameter.add(new Attribute(ExportAsAttribute, { parameters: [`typeof(${vParam.schema.items.details.csharp.referenceInterface}[])`] }));
+            }
             cmdletParameter.add(new Attribute(AllowEmptyCollectionAttribute));
           }
 
